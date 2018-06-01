@@ -255,7 +255,6 @@ BEGIN:
 	int 21h
 					
 ; выход в DOS
-	xor al, al
 	mov ah, 4ch
 	int 21h
 	

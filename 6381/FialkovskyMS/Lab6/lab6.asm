@@ -83,79 +83,115 @@ NO_ERROR:
 FREE_MEM endp
 
 
-RUN_PROCESS proc 
-	mov dx, offset PATH
-	mov bx, offset ParamDataBlock
+RUN_PROCESS proc 	
+	mov es, es:[2Ch]
+	mov si, 0
+
+HANDLE_ENVIR:
+	mov dl, es:[si]
+	cmp dl, 00
+	je DO_END_OF_LINE	
+	inc si
+	jmp HANDLE_ENVIR
+
+DO_END_OF_LINE:
+	inc si
+	mov dl, es:[si]
+	cmp dl, 00
+	jne HANDLE_ENVIR	
+	add si, 03
+	push di
+	lea di, PATH
+
+HANDLE_PATH:
+	mov dl, es:[si]
+	cmp dl, 00
+	je DO_END_OF_LINE_AGAIN	
+	mov [di], dl	
+	inc di			
+	inc si	
+	jmp HANDLE_PATH
+
+DO_END_OF_LINE_AGAIN:
+	sub di, 05h	
+	mov [di], byte ptr '2'	
+	mov [di+2], byte ptr 'C'
+	mov [di+3], byte ptr 'O'
+	mov [di+4], byte ptr 'M'
+	mov [di+5], byte ptr 0h
+	pop di
+	mov KEEP_SP, SP
+	mov KEEP_SS, SS
 	push ds
 	pop es
-	mov KEEP_SP, sp
-	mov KEEP_SS, ss
-	
-	;вызываем загрузчик OS
-	;если вызываемая программа не была загружена, 
-	;то устанавливается флаг переноса CF=1 и в AX заносится код ошибки
+	mov bx, offset ParamDataBlock
+	mov dx, offset PATH
 	mov ax, 4B00h
 	int 21h
-	jnc MODULE_LOADED 
+	jnc IS_LOADED
 	
 	push ax
 	mov ax, DATA
 	mov ds, ax
 	pop ax
-	mov ss, KEEP_SS
-	mov sp, KEEP_SP
+	mov SS, KEEP_SS
+	mov SP, KEEP_SP
 	
-	; Обработка ошибок
 	cmp ax, 1
-	mov dx, offset str_err_file_not_found
-	je END_MODULE_1
+	mov dx, offset str_err_func_number_incorrect
+	je SIMPLE_EXIT
+
 	cmp ax, 2
 	mov dx, offset str_err_file_not_found
-	je END_MODULE_1
-	cmp ax,  5
+	je SIMPLE_EXIT
+
+	cmp ax, 5
 	mov dx, offset str_err_disk
-	je END_MODULE_1
+	je SIMPLE_EXIT
+
 	cmp ax, 8
 	mov dx, offset str_err_mem_val_incorrect
-	je END_MODULE_1
+	je SIMPLE_EXIT
+
 	cmp ax, 10
 	mov dx, offset str_err_env_val_incorrect
-	je END_MODULE_1
+	je SIMPLE_EXIT
+
 	cmp ax, 11
 	mov dx, offset str_err_format_incorrect
+	je SIMPLE_EXIT
 	
-END_MODULE_1:
+SIMPLE_EXIT:
 	call PRINT_DX
-	xor al,al
-	mov ah,4Ch
+	
+	xor al ,al
+	mov ah, 4Ch
 	int 21h
 		
-MODULE_LOADED: ; CF=0 - всё хорошо
-	mov ax, 4d00h ; в AH - причина, в AL - код завершения
+IS_LOADED:
+	mov ax,4d00h
 	int 21h
 	
-	; Обработка завершения работы модуля
 	cmp ah, 0
 	mov dx, offset str_end_normal
-	je END_MODULE_2
+	je EXIT_WITH_MES
 	cmp ah, 1
 	mov dx, offset str_end_ctrl_end
-	je END_MODULE_2
+	je EXIT_WITH_MES
 	cmp ah, 2
 	mov dx, offset str_err_device
-	je END_MODULE_2
+	je EXIT_WITH_MES
 	cmp ah, 3
-	mov dx, offset PATH
-	je END_MODULE_2
+	mov dx, offset str_end_31h
 
-END_MODULE_2:
+EXIT_WITH_MES:
 	call PRINT_DX
 	mov di, offset END_CODE
 	call BYTE_TO_HEX
 	add di, 0Ah
 	mov [di], al
-	add di, 1h
-	xchg ah,al
+	add di, 1
+	xchg ah, al
 	mov [di], al
 	mov dx, offset END_CODE
 	call PRINT_DX
@@ -179,7 +215,7 @@ CODE ENDS
 
 
 DATA SEGMENT
-    ParamDataBlock    dw ? ;сегментный адрес среды
+    ParamDataBlock    	dw ? ;сегментный адрес среды
                         dd ? ;сегмент и смещение командной строки
                         dd ? ;сегмент и смещение первого FCB
                         dd ? ;сегмент и смещение второго FCB
@@ -202,7 +238,7 @@ DATA SEGMENT
 	str_end_31h                     DB 0DH, 0AH, 'Completion by function 31h!',0DH,0AH,'$'
     ; end_of_endings_sector
 
-	PATH 	 DB 'LAB2.COM',0 ;полное имя файла
+	PATH 	 DB '                                               ',0DH,0AH,'$',0
 	KEEP_SS  DW 0
 	KEEP_SP  DW 0
 	END_CODE DB 'End code:   ',0DH,0AH,'$'
